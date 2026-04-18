@@ -3,7 +3,7 @@ require('dotenv').config();
 const express = require('express')
 const cors = require('cors')
 const { GoogleGenerativeAI } = require('@google/generative-ai')
-const { YoutubeTranscript } = require('youtube-transcript')
+const { getTranscript } = require('youtube-transcript-api');
 
 const app = express();
 
@@ -17,8 +17,8 @@ app.post('/summarize', async(req, res) => {
     try{
         const { videoId } = req.body;
 
-        const transcriptData = await YoutubeTranscript.fetchTranscript(videoId);
-        const transcript = transcriptData.map(chunk=>chunk.text).join(' ');
+        const transcriptData = await getTranscript(videoId);
+        const transcript = transcriptData.map(chunk => chunk.text).join(' ');
         const model = GenAI.getGenerativeModel({ model: 'gemini-pro' });
         const prompt = 'You are a helpful assistant. Summarize this Youtube video transcript. Pull out the key points, main topics covered, and important facts mentioned.'
 
