@@ -40,3 +40,8 @@ app.post('/summarize', async(req, res) => {
         console.log('Server running on https://localhost:${PORT}');
 
     });
+    //dotenv(get api keys from .env file), import express, cors, generative ai, youtubetranscript, start the app from express, make use of boht the cors and express
+    // make use of generative ai
+    // define a function for youtube transcript like and if-else, in case if transcript doesnt load or some error occur,
+    //it will give an error message and in that fetch the transcript using the video id, give it to AI with a prompt
+    // open the port where the server actually turns on locally on 5000 or if the environment exists then on it
