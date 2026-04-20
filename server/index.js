@@ -1,23 +1,23 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Groq = require('groq-sdk');
 const { getSubtitles } = require('youtube-captions-scraper');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 async function getTranscript(videoId) {
-    try{
-        const captions = await getSubtitles({ videoID: videoId, lang: 'en' });
-        return captions.map(c => c.text).join(' ');
-    }catch{
-        const captions = await getSubtitles({videoID: videoId, lang: 'a.en' });
-        return captions.map(c => c.text).join(' ');
-    }
+  try {
+    const captions = await getSubtitles({ videoID: videoId, lang: 'en' });
+    return captions.map(c => c.text).join(' ');
+  } catch {
+    const captions = await getSubtitles({ videoID: videoId, lang: 'a.en' });
+    return captions.map(c => c.text).join(' ');
+  }
 }
 
 app.post('/summarize', async (req, res) => {
@@ -25,10 +25,14 @@ app.post('/summarize', async (req, res) => {
     const { videoId } = req.body;
     const transcript = await getTranscript(videoId);
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-    const prompt = `Summarize this YouTube video transcript clearly with key points:\n\n${transcript}`;
-    const result = await model.generateContent(prompt);
-    const summary = result.response.text();
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [{ 
+        role: 'user', 
+        content: `Summarize this YouTube video transcript clearly with key points:\n\n${transcript}` 
+      }]
+    });
+    const summary = completion.choices[0].message.content;
 
     res.json({ summary });
   } catch (error) {
