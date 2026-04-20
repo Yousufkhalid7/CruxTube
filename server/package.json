@@ -15,6 +15,6 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "youtube-transcript-api": "^3.0.6"
+    "youtubei.js": "^17.0.1"
   }
 }
