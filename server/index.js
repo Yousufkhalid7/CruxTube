@@ -11,8 +11,13 @@ app.use(express.json());
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 async function getTranscript(videoId) {
-  const captions = await getSubtitles({ videoID: videoId, lang: 'en' });
-  return captions.map(c => c.text).join(' ');
+    try{
+        const captions = await getSubtitles({ videoID: videoId, lang: 'en' });
+        return captions.map(c => c.text).join(' ');
+    }catch{
+        const captions = await getSubtitles({videoID: videoId, lang: 'a.en' });
+        return captions.map(c => c.text).join(' ');
+    }
 }
 
 app.post('/summarize', async (req, res) => {
