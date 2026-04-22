@@ -1,46 +1,59 @@
 require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
-const Groq = require('groq-sdk');
-const { getSubtitles } = require('youtube-captions-scraper');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-async function getTranscript(videoId) {
+// =============================
+// 🔹 ROUTE (TEST ONLY)
+// =============================
+app.get('/transcript', async (req, res) => {
   try {
-    const captions = await getSubtitles({ videoID: videoId, lang: 'en' });
-    return captions.map(c => c.text).join(' ');
-  } catch {
-    const captions = await getSubtitles({ videoID: videoId, lang: 'a.en' });
-    return captions.map(c => c.text).join(' ');
-  }
-}
+    const url = req.query.url;
 
-app.post('/summarize', async (req, res) => {
-  try {
-    const { videoId } = req.body;
-    const transcript = await getTranscript(videoId);
+    if (!url) {
+      return res.status(400).json({ error: "URL is required" });
+    }
 
-    const completion = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ 
-        role: 'user', 
-        content: `Summarize this YouTube video transcript clearly with key points:\n\n${transcript}` 
-      }]
+    const videoId = getVideoId(url);
+
+    console.log("VIDEO ID:", videoId);
+
+    if (!videoId) {
+      return res.status(400).json({ error: "Invalid YouTube URL" });
+    }
+
+    // 🚫 No transcript logic here
+    res.json({
+      message: "Video ID extracted successfully",
+      videoId: videoId
     });
-    const summary = completion.choices[0].message.content;
 
-    res.json({ summary });
-  } catch (error) {
-    console.error('Error:', error.message);
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server Error" });
   }
 });
 
+
+// =============================
+// 🔹 EXTRACT VIDEO ID
+// =============================
+function getVideoId(url) {
+  const regex = /(?:youtube\.com\/(?:.*v=|.*\/)|youtu\.be\/)([^#&?]*).*/;
+  const match = url.match(regex);
+
+  return (match && match[1].length === 11) ? match[1] : null;
+}
+
+
+// =============================
+// 🔹 START SERVER
+// =============================
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
