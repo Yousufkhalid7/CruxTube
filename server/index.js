@@ -15,10 +15,6 @@ app.use(express.json());
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-
-// =============================
-// 🔹 HELPERS
-// =============================
 function isPlaylist(url) {
   return url.includes("list=");
 }
@@ -29,10 +25,6 @@ function getVideoId(url) {
   return (match && match[1].length === 11) ? match[1] : null;
 }
 
-
-// =============================
-// 🔹 PLAYLIST IDS
-// =============================
 function getPlaylistVideos(url) {
   return new Promise((resolve, reject) => {
     const command = `yt-dlp --quiet --flat-playlist --print "%(id)s" ${url}`;
@@ -50,10 +42,6 @@ function getPlaylistVideos(url) {
   });
 }
 
-
-// =============================
-// 🔹 SUBTITLES (yt-dlp)
-// =============================
 function getTranscriptWithYtDlp(url, videoId) {
   return new Promise((resolve) => {
     const outputTemplate = `sub_${videoId}.%(ext)s`;
@@ -85,10 +73,6 @@ function getTranscriptWithYtDlp(url, videoId) {
   });
 }
 
-
-// =============================
-// 🔹 VTT PARSER
-// =============================
 function parseVTT(filePath) {
   const data = fs.readFileSync(filePath, 'utf-8');
 
@@ -105,10 +89,6 @@ function parseVTT(filePath) {
     .trim();
 }
 
-
-// =============================
-// 🔹 DOWNLOAD AUDIO
-// =============================
 function downloadAudio(videoId) {
   return new Promise((resolve, reject) => {
     const output = `audio_${videoId}.mp3`;
@@ -123,10 +103,6 @@ function downloadAudio(videoId) {
   });
 }
 
-
-// =============================
-// 🔹 WHISPER (GROQ)
-// =============================
 async function transcribeWithWhisper(filePath) {
   const formData = new FormData();
 
@@ -148,10 +124,6 @@ async function transcribeWithWhisper(filePath) {
   return response.data.text;
 }
 
-
-// =============================
-// 🔹 MAIN PIPELINE
-// =============================
 async function getTranscript(videoUrl, videoId) {
   console.log("➡️ Trying subtitles:", videoId);
 
@@ -181,10 +153,6 @@ async function getTranscript(videoUrl, videoId) {
   }
 }
 
-
-// =============================
-// 🔹 SUMMARY
-// =============================
 async function summarizeText(text) {
   const response = await groq.chat.completions.create({
     model: "llama-3.1-8b-instant",
@@ -199,10 +167,6 @@ async function summarizeText(text) {
   return response.choices[0].message.content;
 }
 
-
-// =============================
-// 🔹 ROUTE (FIXED)
-// =============================
 app.get('/transcript', async (req, res) => {
   try {
     console.log("🔥 REQUEST RECEIVED");
@@ -238,7 +202,7 @@ app.get('/transcript', async (req, res) => {
       return res.json({ playlist: true, results });
     }
 
-    // 🔥 SINGLE VIDEO
+    // SINGLE VIDEO
     const videoId = getVideoId(url);
 
     if (!videoId) {
@@ -265,10 +229,6 @@ app.get('/transcript', async (req, res) => {
   }
 });
 
-
-// =============================
-// 🔹 START SERVER
-// =============================
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
