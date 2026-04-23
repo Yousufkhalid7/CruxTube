@@ -15,10 +15,12 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "form-data": "^4.0.5",
     "groq-sdk": "^1.1.2",
     "xml2js": "^0.6.2",
     "youtube-captions-scraper": "^2.0.3",
     "youtube-transcript-api": "^3.0.6",
-    "youtubei.js": "^17.0.1"
+    "youtubei.js": "^17.0.1",
+    "ytdl-core": "^4.11.5"
   }
 }

@@ -5,6 +5,8 @@ const cors = require('cors');
 const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
+const FormData = require('form-data');
 const Groq = require('groq-sdk');
 
 const app = express();
@@ -13,6 +15,10 @@ app.use(express.json());
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+
+// =============================
+// 🔹 HELPERS
+// =============================
 function isPlaylist(url) {
   return url.includes("list=");
 }
@@ -23,9 +29,13 @@ function getVideoId(url) {
   return (match && match[1].length === 11) ? match[1] : null;
 }
 
+
+// =============================
+// 🔹 PLAYLIST IDS
+// =============================
 function getPlaylistVideos(url) {
   return new Promise((resolve, reject) => {
-    const command = `yt-dlp --flat-playlist --print "%(id)s" ${url}`;
+    const command = `yt-dlp --quiet --flat-playlist --print "%(id)s" ${url}`;
 
     exec(command, (err, stdout) => {
       if (err) return reject(err);
@@ -40,6 +50,10 @@ function getPlaylistVideos(url) {
   });
 }
 
+
+// =============================
+// 🔹 SUBTITLES (yt-dlp)
+// =============================
 function getTranscriptWithYtDlp(url, videoId) {
   return new Promise((resolve) => {
     const outputTemplate = `sub_${videoId}.%(ext)s`;
@@ -71,6 +85,10 @@ function getTranscriptWithYtDlp(url, videoId) {
   });
 }
 
+
+// =============================
+// 🔹 VTT PARSER
+// =============================
 function parseVTT(filePath) {
   const data = fs.readFileSync(filePath, 'utf-8');
 
@@ -87,13 +105,93 @@ function parseVTT(filePath) {
     .trim();
 }
 
+
+// =============================
+// 🔹 DOWNLOAD AUDIO
+// =============================
+function downloadAudio(videoId) {
+  return new Promise((resolve, reject) => {
+    const output = `audio_${videoId}.mp3`;
+    const url = `https://www.youtube.com/watch?v=${videoId}`;
+
+    const command = `yt-dlp --quiet -x --audio-format mp3 --ffmpeg-location "C:\\Users\\yousu\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1-full_build\\bin" -o "${output}" ${url}`;
+
+    exec(command, (err) => {
+      if (err) return reject(err);
+      resolve(output);
+    });
+  });
+}
+
+
+// =============================
+// 🔹 WHISPER (GROQ)
+// =============================
+async function transcribeWithWhisper(filePath) {
+  const formData = new FormData();
+
+  formData.append("file", fs.createReadStream(filePath));
+  formData.append("model", "whisper-large-v3");
+
+  const response = await axios.post(
+    "https://api.groq.com/openai/v1/audio/transcriptions",
+    formData,
+    {
+      headers: {
+        ...formData.getHeaders(),
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      maxBodyLength: Infinity
+    }
+  );
+
+  return response.data.text;
+}
+
+
+// =============================
+// 🔹 MAIN PIPELINE
+// =============================
+async function getTranscript(videoUrl, videoId) {
+  console.log("➡️ Trying subtitles:", videoId);
+
+  let transcript = await getTranscriptWithYtDlp(videoUrl, videoId);
+
+  if (transcript) {
+    console.log("✅ Subtitles used:", videoId);
+    return transcript;
+  }
+
+  console.log("⚠️ Falling back to Whisper:", videoId);
+
+  try {
+    const audioPath = await downloadAudio(videoId);
+    console.log("🎧 Audio downloaded");
+
+    const text = await transcribeWithWhisper(audioPath);
+    console.log("🧠 Whisper success");
+
+    fs.unlinkSync(audioPath);
+
+    return text;
+
+  } catch (err) {
+    console.error("❌ Whisper failed:", err.message);
+    return null;
+  }
+}
+
+
+// =============================
+// 🔹 SUMMARY
+// =============================
 async function summarizeText(text) {
   const response = await groq.chat.completions.create({
     model: "llama3-70b-8192",
     messages: [
       {
         role: "user",
-        content: `Summarize this YouTube transcript clearly:\n\n${text}`
+        content: `Summarize this YouTube transcript:\n\n${text}`
       }
     ]
   });
@@ -101,68 +199,53 @@ async function summarizeText(text) {
   return response.choices[0].message.content;
 }
 
+
+// =============================
+// 🔹 ROUTE (FIXED)
+// =============================
 app.get('/transcript', async (req, res) => {
   try {
+    console.log("🔥 REQUEST RECEIVED");
+
     const url = req.query.url;
+    console.log("URL:", url);
 
     if (!url) {
-      return res.status(400).json({ error: "URL is required" });
+      return res.status(400).json({ error: "URL required" });
     }
 
+    // 🔥 PLAYLIST
     if (isPlaylist(url)) {
-      console.log("Playlist detected");
-
       let videoIds = await getPlaylistVideos(url);
-
       videoIds = videoIds.slice(0, 5);
 
       const results = await Promise.all(
         videoIds.map(async (id) => {
           const videoUrl = `https://www.youtube.com/watch?v=${id}`;
 
-          const transcript = await getTranscriptWithYtDlp(videoUrl, id);
+          const transcript = await getTranscript(videoUrl, id);
 
           if (!transcript) {
-            return {
-              videoId: id,
-              transcript: null,
-              summary: "Transcript not available"
-            };
+            return { videoId: id, transcript: null, summary: "Not available" };
           }
 
           const summary = await summarizeText(transcript.slice(0, 8000));
 
-          return {
-            videoId: id,
-            transcript,
-            summary
-          };
+          return { videoId: id, transcript, summary };
         })
       );
 
-      const combinedText = results
-        .map(r => r.transcript)
-        .filter(Boolean)
-        .join(" ");
-
-      const playlistSummary = combinedText
-        ? await summarizeText(combinedText.slice(0, 12000))
-        : "No transcripts available";
-
-      return res.json({
-        playlist: true,
-        playlistSummary,
-        results
-      });
+      return res.json({ playlist: true, results });
     }
 
+    // 🔥 SINGLE VIDEO
     const videoId = getVideoId(url);
 
     if (!videoId) {
       return res.status(400).json({ error: "Invalid URL" });
     }
 
-    const transcript = await getTranscriptWithYtDlp(url, videoId);
+    const transcript = await getTranscript(url, videoId);
 
     if (!transcript) {
       return res.status(404).json({ error: "Transcript not available" });
@@ -177,11 +260,15 @@ app.get('/transcript', async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
+    console.error("💥 ERROR:", err);
     res.status(500).json({ error: "Server Error" });
   }
 });
 
+
+// =============================
+// 🔹 START SERVER
+// =============================
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
