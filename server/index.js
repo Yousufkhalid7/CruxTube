@@ -17,6 +17,8 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const cache = {};
 
+const videoStore = {};
+
 function isPlaylist(url) {
   return url.includes("list=");
 }
@@ -127,12 +129,9 @@ async function transcribeWithWhisper(filePath) {
 }
 
 async function getTranscript(videoUrl, videoId) {
-  console.log("➡️ Trying subtitles:", videoId);
-
   let transcript = await getTranscriptWithYtDlp(videoUrl, videoId);
 
   if (transcript) {
-    console.log("✅ Subtitles used:", videoId);
     return transcript;
   }
 
@@ -140,17 +139,15 @@ async function getTranscript(videoUrl, videoId) {
 
   try {
     const audioPath = await downloadAudio(videoId);
-    console.log("🎧 Audio downloaded");
 
     const text = await transcribeWithWhisper(audioPath);
-    console.log("🧠 Whisper success");
 
     fs.unlinkSync(audioPath);
 
     return text;
 
   } catch (err) {
-    console.error("❌ Whisper failed:", err.message);
+    console.error("Whisper failed:", err.message);
     return null;
   }
 }
@@ -165,9 +162,6 @@ function splitText(text, chunkSize = 3000) {
 
 async function summarizeText(text) {
   const chunks = splitText(text, 3000);
-
-  console.log("🧠 Total chunks:", chunks.length);
-
   //PARALLEL PROCESSING
   const summaries = await Promise.all(
     chunks.map((chunk, i) => {
@@ -222,10 +216,33 @@ async function processInBatches(tasks, batchSize = 2) {
   return results;
 }
 
+async function  checkRelevance(summary, question) {
+  const response = await groq.completions.create({
+    model: "llama-3.1-8b-instant",
+    messages: [
+      {
+        role: "system",
+        content: "Answer ONLY yes or no. Is the question related to the video?"
+      }
+      {
+        role: "user",
+        content:`Summary: ${summary} ${question}`
+      }
+    ]
+  })
+  return response.choices[0].message.content.toLowerCase().includes("yes")
+}
+
+function getRelevantChunks(chunks, query){
+  return chunks.map(chunk => ({
+    text: chunk, score: query
+    .toLowerCase().split(" ").filter(word => chunk.toLowerCase().includes(word)).length
+  }))
+  .sort((a, b) => b.score - a.score).slice(0, 3).map(item => item.text)
+}
+
 app.get('/transcript', async (req, res) => {
   try {
-    console.log("🔥 REQUEST RECEIVED");
-
     const url = req.query.url;
 
     if (!url) {
@@ -235,12 +252,11 @@ app.get('/transcript', async (req, res) => {
     // PLAYLIST
     if (isPlaylist(url)) {
       let videoIds = await getPlaylistVideos(url);
-      videoIds = videoIds.slice(0, 5);
+      videoIds = videoIds.slice(0, 10);
 
       const results = await processInBatches(
         videoIds.map(id => async () => {
           if (cache[id]) {
-            console.log("⚡ Cache hit:", id);
             return cache[id];
           }
 
@@ -267,6 +283,11 @@ app.get('/transcript', async (req, res) => {
 
     // SINGLE VIDEO
     const videoId = getVideoId(url);
+
+    const chunks = splitText(transcript(0, 500);
+    videoStore[videoId] = {
+      summary, chunks
+    }
 
     if (!videoId) {
       return res.status(400).json({ error: "Invalid URL" });
@@ -301,6 +322,53 @@ app.get('/transcript', async (req, res) => {
     res.status(500).json({ error: "Server Error" });
   }
 });
+
+app.post('/chat', async(req, res) =>{
+
+  const {summary, chunks} = data;
+
+  const isRelated = await checkRelevance(summary, question);
+  if(!isRelated){
+    return res.json({answer: "This question is not related to the video(s)."})
+  }
+
+  const relevantChunks = getRelevantChunks(chunks, question)
+  const context = relevantChunks.join("\n\n")
+
+  const response = await groq.completions.create({
+    model: "llama-3.1-8b-instant",
+    messages: [
+      {
+        role: "system",
+        content: `You answer questions about the video.
+        Rules:
+        -Use transcript context if available
+        -You MAY use general knowledge
+        -Stay within topic`
+      },
+      {
+        role: "user",
+        content: `Summary: ${summary} Context: ${context} Question: ${question}` 
+      }
+    ]
+  })
+  res.json({ answer: response.choices[0].message.content})
+  
+  try{
+    const {videoId, question} = req.body;
+
+    const data = videoStore[videoId]
+
+    if(!data){
+      return res.status(404).json({error: "Process video first"})
+    }
+
+    res.json({message: "Chat route working"})
+  } catch(err){
+    console.error(err)
+    res.status(500).json({error: "Server error"})
+  }
+})
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
