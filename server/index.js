@@ -159,7 +159,11 @@ async function summarizeText(text) {
     messages: [
       {
         role: "user",
-        content: `Summarize this YouTube transcript:\n\n${text}`
+        content: `Summarize this YouTube transcript clearly. Give: 
+        -Key Points
+        -Main Idea
+        -Important Insights
+        \n\n${text}`
       }
     ]
   });
@@ -178,7 +182,7 @@ app.get('/transcript', async (req, res) => {
       return res.status(400).json({ error: "URL required" });
     }
 
-    // 🔥 PLAYLIST
+    // PLAYLIST
     if (isPlaylist(url)) {
       let videoIds = await getPlaylistVideos(url);
       videoIds = videoIds.slice(0, 5);
