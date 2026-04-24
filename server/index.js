@@ -15,6 +15,8 @@ app.use(express.json());
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+const cache = {};
+
 function isPlaylist(url) {
   return url.includes("list=");
 }
@@ -153,22 +155,71 @@ async function getTranscript(videoUrl, videoId) {
   }
 }
 
+function splitText(text, chunkSize = 3000) {
+  const chunks = [];
+  for (let i = 0; i < text.length; i += chunkSize) {
+    chunks.push(text.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
 async function summarizeText(text) {
-  const response = await groq.chat.completions.create({
+  const chunks = splitText(text, 3000);
+
+  console.log("🧠 Total chunks:", chunks.length);
+
+  //PARALLEL PROCESSING
+  const summaries = await Promise.all(
+    chunks.map((chunk, i) => {
+      console.log(`🔹 Chunk ${i + 1}/${chunks.length}`);
+
+      return groq.chat.completions.create({
+        model: "llama-3.1-8b-instant",
+        messages: [
+          {
+            role: "user",
+            content: `
+Summarize this part of a YouTube transcript.
+Focus on key ideas and insights.
+
+Text:
+${chunk}
+`
+          }
+        ]
+      }).then(res => res.choices[0].message.content);
+    })
+  );
+
+  const combined = summaries.join("\n\n");
+
+  const finalRes = await groq.chat.completions.create({
     model: "llama-3.1-8b-instant",
     messages: [
       {
         role: "user",
-        content: `Summarize this YouTube transcript clearly. Give: 
-        -Key Points
-        -Main Idea
-        -Important Insights
-        \n\n${text}`
+        content: `
+Combine and refine these summaries into a clear final summary.
+
+${combined}
+`
       }
     ]
   });
 
-  return response.choices[0].message.content;
+  return finalRes.choices[0].message.content;
+}
+
+async function processInBatches(tasks, batchSize = 2) {
+  const results = [];
+
+  for (let i = 0; i < tasks.length; i += batchSize) {
+    const batch = tasks.slice(i, i + batchSize);
+    const res = await Promise.all(batch.map(fn => fn()));
+    results.push(...res);
+  }
+
+  return results;
 }
 
 app.get('/transcript', async (req, res) => {
@@ -176,7 +227,6 @@ app.get('/transcript', async (req, res) => {
     console.log("🔥 REQUEST RECEIVED");
 
     const url = req.query.url;
-    console.log("URL:", url);
 
     if (!url) {
       return res.status(400).json({ error: "URL required" });
@@ -187,20 +237,29 @@ app.get('/transcript', async (req, res) => {
       let videoIds = await getPlaylistVideos(url);
       videoIds = videoIds.slice(0, 5);
 
-      const results = await Promise.all(
-        videoIds.map(async (id) => {
+      const results = await processInBatches(
+        videoIds.map(id => async () => {
+          if (cache[id]) {
+            console.log("⚡ Cache hit:", id);
+            return cache[id];
+          }
+
           const videoUrl = `https://www.youtube.com/watch?v=${id}`;
 
           const transcript = await getTranscript(videoUrl, id);
 
           if (!transcript) {
-            return { videoId: id, transcript: null, summary: "Not available" };
+            return { videoId: id, summary: "Not available" };
           }
 
-          const summary = await summarizeText(transcript.slice(0, 8000));
+          const summary = await summarizeText(transcript.slice(0, 12000));
 
-          return { videoId: id, transcript, summary };
-        })
+          const result = { videoId: id, transcript, summary };
+          cache[id] = result;
+
+          return result;
+        }),
+        2
       );
 
       return res.json({ playlist: true, results });
@@ -213,19 +272,29 @@ app.get('/transcript', async (req, res) => {
       return res.status(400).json({ error: "Invalid URL" });
     }
 
+    // CACHE
+    if (cache[videoId]) {
+      console.log("⚡ Cache hit:", videoId);
+      return res.json(cache[videoId]);
+    }
+
     const transcript = await getTranscript(url, videoId);
 
     if (!transcript) {
       return res.status(404).json({ error: "Transcript not available" });
     }
 
-    const summary = await summarizeText(transcript.slice(0, 8000));
+    const summary = await summarizeText(transcript.slice(0, 12000));
 
-    res.json({
+    const result = {
       playlist: false,
       transcript,
       summary
-    });
+    };
+
+    cache[videoId] = result;
+
+    res.json(result);
 
   } catch (err) {
     console.error("💥 ERROR:", err);
