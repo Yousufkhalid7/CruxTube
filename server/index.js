@@ -297,7 +297,7 @@ app.post('/chat', async (req, res) => {
       messages: [
         {
           role: "system",
-          content: "Answer using context + general knowledge, stay within topic."
+          content: "You are an AI assistant. Rules: - Detect the language of the user's question - Answer in the SAME language as the question- If question is English → answer in English. Answer using context + general knowledge, stay within topic."
         },
         {
           role: "user",
