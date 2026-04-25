@@ -105,6 +105,22 @@ async function transcribeWithWhisper(filePath) {
   return response.data.text;
 }
 
+async function detectLanguage(text) {
+  const response = await groq.chat.completions.create({
+    model: "llama-3.1-8b-instant",
+    messages: [
+      {
+        role: "system", content: "Detect the language of the text. Return only the language name (e.g., English, German, Hindi)."
+      },
+      {
+        role: "user",
+        content: text.slice(0, 2000)
+      }
+    ]
+  });
+  return response.choices[0].message.content.trim();
+}
+
 async function getTranscript(videoUrl, videoId) {
   console.log("➡️ Trying subtitles:", videoId);
 
@@ -137,7 +153,7 @@ async function summarizeText(text) {
         model: "llama-3.1-8b-instant",
         messages: [
           {
-            role: "user", content: `Summarize:\n${chunk}`
+            role: "user", content: `Summarize the following texts in english:\n${chunk}`
           }
         ]
       }).then(res => res.choices[0].message.content)
@@ -149,7 +165,7 @@ async function summarizeText(text) {
     model: "llama-3.1-8b-instant",
     messages: [
       {
-        role: "user", content: `Create final summary:\n${combined}`
+        role: "user", content: `Create final summary in english:\n${combined}`
       }
     ]
   });
@@ -182,6 +198,8 @@ app.get('/transcript', async (req, res) => {
   try {
     const url = req.query.url;
 
+    const language = await detectLanguage(transcript);
+
     const videoId = getVideoId(url);
     if (!videoId) {
       return res.status(400).json({ error: "Invalid URL" });
@@ -202,7 +220,7 @@ app.get('/transcript', async (req, res) => {
 
     //STORE FOR CHAT
     videoStore[videoId] = { 
-      summary, chunks
+      summary, chunks, language
     };
 
     const result = { transcript, summary };
@@ -223,6 +241,33 @@ function getRelevantChunks(chunks, query) {
     }))
     .sort((a, b) => b.score - a.score).slice(0, 3).map(item => item.text);
 }
+
+app.post('/translate-summary', async (req, res) => {
+  try {
+    const { videoId } = req.body;
+    const data = videoStore[videoId];
+
+    if (!data) {
+      return res.status(404).json({ error: "Video not found" });
+    }
+
+    const { summary, language } = data;
+    const response = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      messages: [
+        {
+          role: "user", content: `Translate this summary to ${language}:\n${summary}`
+        }
+      ]
+    });
+    res.json({
+      translated: response.choices[0].message.content,
+      language
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Server Error" });
+  }
+});
 
 app.post('/chat', async (req, res) => {
   try {
