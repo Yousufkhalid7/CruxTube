@@ -198,8 +198,6 @@ app.get('/transcript', async (req, res) => {
   try {
     const url = req.query.url;
 
-    const language = await detectLanguage(transcript);
-
     const videoId = getVideoId(url);
     if (!videoId) {
       return res.status(400).json({ error: "Invalid URL" });
@@ -214,6 +212,8 @@ app.get('/transcript', async (req, res) => {
     if (!transcript) {
       return res.status(404).json({ error: "Transcript not available" });
     }
+
+    const language = await detectLanguage(transcript);
 
     const summary = await summarizeText(transcript.slice(0, 12000));
     const chunks = splitText(transcript, 500);
