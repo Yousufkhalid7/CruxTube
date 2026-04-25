@@ -15,13 +15,9 @@ app.use(express.json());
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-const cache = {};
-
+// MEMORY STORE
 const videoStore = {};
-
-function isPlaylist(url) {
-  return url.includes("list=");
-}
+const cache = {};
 
 function getVideoId(url) {
   const regex = /(?:youtube\.com\/(?:.*v=|.*\/)|youtu\.be\/)([^#&?]*).*/;
@@ -29,21 +25,23 @@ function getVideoId(url) {
   return (match && match[1].length === 11) ? match[1] : null;
 }
 
-function getPlaylistVideos(url) {
-  return new Promise((resolve, reject) => {
-    const command = `yt-dlp --quiet --flat-playlist --print "%(id)s" ${url}`;
+function splitText(text, chunkSize = 3000) {
+  const chunks = [];
+  for (let i = 0; i < text.length; i += chunkSize) {
+    chunks.push(text.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
 
-    exec(command, (err, stdout) => {
-      if (err) return reject(err);
+function parseVTT(filePath) {
+  const data = fs.readFileSync(filePath, 'utf-8');
 
-      const ids = stdout
-        .split("\n")
-        .map(id => id.trim())
-        .filter(Boolean);
-
-      resolve(ids);
-    });
-  });
+  return data.split('\n').filter(line =>
+      line &&
+      !line.includes('WEBVTT') &&
+      !line.includes('-->') &&
+      isNaN(line.trim())
+    ).join(' ').replace(/\s+/g, ' ').trim();
 }
 
 function getTranscriptWithYtDlp(url, videoId) {
@@ -54,7 +52,6 @@ function getTranscriptWithYtDlp(url, videoId) {
 
     exec(command, () => {
       const files = fs.readdirSync(__dirname);
-
       const subtitleFiles = files.filter(f =>
         f.startsWith(`sub_${videoId}`) && f.endsWith('.vtt')
       );
@@ -67,9 +64,7 @@ function getTranscriptWithYtDlp(url, videoId) {
         subtitleFiles.find(f => f.includes('.en.')) || subtitleFiles[0];
 
       const filePath = path.join(__dirname, selectedFile);
-
       const transcript = parseVTT(filePath);
-
       subtitleFiles.forEach(f => fs.unlinkSync(path.join(__dirname, f)));
 
       resolve(transcript);
@@ -77,29 +72,12 @@ function getTranscriptWithYtDlp(url, videoId) {
   });
 }
 
-function parseVTT(filePath) {
-  const data = fs.readFileSync(filePath, 'utf-8');
-
-  return data
-    .split('\n')
-    .filter(line =>
-      line &&
-      !line.includes('WEBVTT') &&
-      !line.includes('-->') &&
-      isNaN(line.trim())
-    )
-    .join(' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 function downloadAudio(videoId) {
   return new Promise((resolve, reject) => {
     const output = `audio_${videoId}.mp3`;
     const url = `https://www.youtube.com/watch?v=${videoId}`;
 
-    const command = `yt-dlp --quiet -x --audio-format mp3 --ffmpeg-location "C:\\Users\\yousu\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1-full_build\\bin" -o "${output}" ${url}`;
-
+    const command = `yt-dlp --quiet -x --audio-format mp3 -o "${output}" ${url}`;
     exec(command, (err) => {
       if (err) return reject(err);
       resolve(output);
@@ -109,7 +87,6 @@ function downloadAudio(videoId) {
 
 async function transcribeWithWhisper(filePath) {
   const formData = new FormData();
-
   formData.append("file", fs.createReadStream(filePath));
   formData.append("model", "whisper-large-v3");
 
@@ -129,192 +106,107 @@ async function transcribeWithWhisper(filePath) {
 }
 
 async function getTranscript(videoUrl, videoId) {
-  let transcript = await getTranscriptWithYtDlp(videoUrl, videoId);
+  console.log("➡️ Trying subtitles:", videoId);
 
+  let transcript = await getTranscriptWithYtDlp(videoUrl, videoId);
   if (transcript) {
+    console.log("Subtitles used");
     return transcript;
   }
 
-  console.log("⚠️ Falling back to Whisper:", videoId);
-
+  console.log("Falling back to Whisper");
   try {
     const audioPath = await downloadAudio(videoId);
-
     const text = await transcribeWithWhisper(audioPath);
 
     fs.unlinkSync(audioPath);
 
     return text;
-
   } catch (err) {
     console.error("Whisper failed:", err.message);
     return null;
   }
 }
 
-function splitText(text, chunkSize = 3000) {
-  const chunks = [];
-  for (let i = 0; i < text.length; i += chunkSize) {
-    chunks.push(text.slice(i, i + chunkSize));
-  }
-  return chunks;
-}
-
 async function summarizeText(text) {
   const chunks = splitText(text, 3000);
-  //PARALLEL PROCESSING
-  const summaries = await Promise.all(
-    chunks.map((chunk, i) => {
-      console.log(`🔹 Chunk ${i + 1}/${chunks.length}`);
 
-      return groq.chat.completions.create({
+  const summaries = await Promise.all(
+    chunks.map(chunk =>
+      groq.chat.completions.create({
         model: "llama-3.1-8b-instant",
         messages: [
           {
-            role: "user",
-            content: `
-Summarize this part of a YouTube transcript.
-Focus on key ideas and insights.
-
-Text:
-${chunk}
-`
+            role: "user", content: `Summarize:\n${chunk}`
           }
         ]
-      }).then(res => res.choices[0].message.content);
-    })
+      }).then(res => res.choices[0].message.content)
+    )
   );
 
   const combined = summaries.join("\n\n");
-
-  const finalRes = await groq.chat.completions.create({
+  const final = await groq.chat.completions.create({
     model: "llama-3.1-8b-instant",
     messages: [
       {
-        role: "user",
-        content: `
-Combine and refine these summaries into a clear final summary.
-
-${combined}
-`
+        role: "user", content: `Create final summary:\n${combined}`
       }
     ]
   });
 
-  return finalRes.choices[0].message.content;
+  return final.choices[0].message.content;
 }
 
-async function processInBatches(tasks, batchSize = 2) {
-  const results = [];
-
-  for (let i = 0; i < tasks.length; i += batchSize) {
-    const batch = tasks.slice(i, i + batchSize);
-    const res = await Promise.all(batch.map(fn => fn()));
-    results.push(...res);
-  }
-
-  return results;
-}
-
-async function  checkRelevance(summary, question) {
-  const response = await groq.completions.create({
+async function checkRelevance(summary, question) {
+  const response = await groq.chat.completions.create({
     model: "llama-3.1-8b-instant",
     messages: [
       {
         role: "system",
-        content: "Answer ONLY yes or no. Is the question related to the video?"
-      }
+        content: `Determine if the question is related to the video topic. Be lenient:
+                  - Questions about meaning, summary, explanation → YES
+                  - Only reject completely unrelated questions. Answer ONLY "yes" or "no".`
+      },
       {
         role: "user",
-        content:`Summary: ${summary} ${question}`
+        content: `Summary: ${summary} Question: ${question}`
       }
     ]
-  })
-  return response.choices[0].message.content.toLowerCase().includes("yes")
-}
+  });
 
-function getRelevantChunks(chunks, query){
-  return chunks.map(chunk => ({
-    text: chunk, score: query
-    .toLowerCase().split(" ").filter(word => chunk.toLowerCase().includes(word)).length
-  }))
-  .sort((a, b) => b.score - a.score).slice(0, 3).map(item => item.text)
+  const reply = response.choices[0].message.content.toLowerCase();
+  return reply.includes("yes") || reply.includes("related");
 }
 
 app.get('/transcript', async (req, res) => {
   try {
     const url = req.query.url;
 
-    if (!url) {
-      return res.status(400).json({ error: "URL required" });
-    }
-
-    // PLAYLIST
-    if (isPlaylist(url)) {
-      let videoIds = await getPlaylistVideos(url);
-      videoIds = videoIds.slice(0, 10);
-
-      const results = await processInBatches(
-        videoIds.map(id => async () => {
-          if (cache[id]) {
-            return cache[id];
-          }
-
-          const videoUrl = `https://www.youtube.com/watch?v=${id}`;
-
-          const transcript = await getTranscript(videoUrl, id);
-
-          if (!transcript) {
-            return { videoId: id, summary: "Not available" };
-          }
-
-          const summary = await summarizeText(transcript.slice(0, 12000));
-
-          const result = { videoId: id, transcript, summary };
-          cache[id] = result;
-
-          return result;
-        }),
-        2
-      );
-
-      return res.json({ playlist: true, results });
-    }
-
-    // SINGLE VIDEO
     const videoId = getVideoId(url);
-
-    const chunks = splitText(transcript(0, 500);
-    videoStore[videoId] = {
-      summary, chunks
-    }
-
     if (!videoId) {
       return res.status(400).json({ error: "Invalid URL" });
     }
 
-    // CACHE
+    //CACHE
     if (cache[videoId]) {
-      console.log("⚡ Cache hit:", videoId);
       return res.json(cache[videoId]);
     }
 
     const transcript = await getTranscript(url, videoId);
-
     if (!transcript) {
       return res.status(404).json({ error: "Transcript not available" });
     }
 
     const summary = await summarizeText(transcript.slice(0, 12000));
+    const chunks = splitText(transcript, 500);
 
-    const result = {
-      playlist: false,
-      transcript,
-      summary
+    //STORE FOR CHAT
+    videoStore[videoId] = { 
+      summary, chunks
     };
 
+    const result = { transcript, summary };
     cache[videoId] = result;
-
     res.json(result);
 
   } catch (err) {
@@ -323,52 +215,61 @@ app.get('/transcript', async (req, res) => {
   }
 });
 
-app.post('/chat', async(req, res) =>{
+function getRelevantChunks(chunks, query) {
+  return chunks
+    .map(chunk => ({
+      text: chunk,
+      score: query.toLowerCase().split(" ").filter(word => chunk.toLowerCase().includes(word)).length
+    }))
+    .sort((a, b) => b.score - a.score).slice(0, 3).map(item => item.text);
+}
 
-  const {summary, chunks} = data;
+app.post('/chat', async (req, res) => {
+  try {
+    const { videoId, question } = req.body;
 
-  const isRelated = await checkRelevance(summary, question);
-  if(!isRelated){
-    return res.json({answer: "This question is not related to the video(s)."})
-  }
+    const data = videoStore[videoId];
 
-  const relevantChunks = getRelevantChunks(chunks, question)
-  const context = relevantChunks.join("\n\n")
-
-  const response = await groq.completions.create({
-    model: "llama-3.1-8b-instant",
-    messages: [
-      {
-        role: "system",
-        content: `You answer questions about the video.
-        Rules:
-        -Use transcript context if available
-        -You MAY use general knowledge
-        -Stay within topic`
-      },
-      {
-        role: "user",
-        content: `Summary: ${summary} Context: ${context} Question: ${question}` 
-      }
-    ]
-  })
-  res.json({ answer: response.choices[0].message.content})
-  
-  try{
-    const {videoId, question} = req.body;
-
-    const data = videoStore[videoId]
-
-    if(!data){
-      return res.status(404).json({error: "Process video first"})
+    if (!data) {
+      return res.status(404).json({error:"Process video first"});
     }
 
-    res.json({message: "Chat route working"})
-  } catch(err){
-    console.error(err)
-    res.status(500).json({error: "Server error"})
+    const {summary, chunks} = data;
+
+    const isRelated = await checkRelevance(summary, question);
+
+    if (!isRelated) {
+      return res.json({
+        answer: "This question is not related to the video."
+      });
+    }
+
+    const relevantChunks = getRelevantChunks(chunks, question);
+    const context = relevantChunks.join("\n\n");
+
+    const response = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      messages: [
+        {
+          role: "system",
+          content: "Answer using context + general knowledge, stay within topic."
+        },
+        {
+          role: "user",
+          content: `Summary: ${summary} Context: ${context} Question: ${question}`
+        }
+      ]
+    });
+
+    res.json({
+      answer: response.choices[0].message.content
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server Error" });
   }
-})
+});
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
