@@ -37,11 +37,11 @@ function parseVTT(filePath) {
   const data = fs.readFileSync(filePath, 'utf-8');
 
   return data.split('\n').filter(line =>
-      line &&
-      !line.includes('WEBVTT') &&
-      !line.includes('-->') &&
-      isNaN(line.trim())
-    ).join(' ').replace(/\s+/g, ' ').trim();
+    line &&
+    !line.includes('WEBVTT') &&
+    !line.includes('-->') &&
+    isNaN(line.trim())
+  ).join(' ').replace(/\s+/g, ' ').trim();
 }
 
 function getTranscriptWithYtDlp(url, videoId) {
@@ -145,7 +145,7 @@ async function getTranscript(videoUrl, videoId) {
 }
 
 async function summarizeText(text) {
-  const chunks = splitText(text, 3000);
+  const chunks = splitText(text, 4000);
 
   const summaries = await Promise.all(
     chunks.map(chunk =>
@@ -208,6 +208,11 @@ app.get('/transcript', async (req, res) => {
       return res.json(cache[videoId]);
     }
 
+    const cachePath = `./cache/${videoId}.json`;
+    if (fs.existsSync(cachePath)) {
+      return res.json(JSON.parse(fs.readFileSync(cachePath)));
+    }
+
     const transcript = await getTranscript(url, videoId);
     if (!transcript) {
       return res.status(404).json({ error: "Transcript not available" });
@@ -219,7 +224,7 @@ app.get('/transcript', async (req, res) => {
     const chunks = splitText(transcript, 500);
 
     //STORE FOR CHAT
-    videoStore[videoId] = { 
+    videoStore[videoId] = {
       summary, chunks, language
     };
 
@@ -276,28 +281,22 @@ app.post('/chat', async (req, res) => {
     const data = videoStore[videoId];
 
     if (!data) {
-      return res.status(404).json({error:"Process video first"});
+      return res.status(404).json({ error: "Process video first" });
     }
 
-    const {summary, chunks} = data;
+    const { summary, chunks } = data;
 
     const isRelated = await checkRelevance(summary, question);
 
-    if (!isRelated) {
-      return res.json({
-        answer: "This question is not related to the video."
-      });
-    }
-
     const relevantChunks = getRelevantChunks(chunks, question);
-    const context = relevantChunks.join("\n\n");
+    const context = relevantChunks.join(" ").slice(0, 1500);
 
     const response = await groq.chat.completions.create({
       model: "llama-3.1-8b-instant",
       messages: [
         {
           role: "system",
-          content: "You are an AI assistant. Rules: - Detect the language of the user's question - Answer in the SAME language as the question- If question is English → answer in English. Answer using context + general knowledge, stay within topic."
+          content: "You are an AI assistant. Rules: - Answer only if relevant, otherwise say not related - Detect the language of the user's question - Answer in the SAME language as the question- If question is English → answer in English. Answer using context + general knowledge, stay within topic."
         },
         {
           role: "user",
