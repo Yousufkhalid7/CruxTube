@@ -21,7 +21,37 @@ export default function App() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chat]);
 
-  // 🔹 Process Video
+  // ✨ Skeleton Loader
+  const Skeleton = () => (
+    <div className="animate-pulse space-y-3">
+      <div className="h-4 bg-gray-700 rounded w-3/4"></div>
+      <div className="h-4 bg-gray-700 rounded w-2/3"></div>
+      <div className="h-4 bg-gray-700 rounded w-1/2"></div>
+    </div>
+  );
+
+  // ✨ Streaming Effect
+  const streamText = (text, baseChat) => {
+    let i = 0;
+    let current = "";
+
+    const interval = setInterval(() => {
+      current += text[i];
+      i++;
+
+      setChat([
+        ...baseChat,
+        { type: "bot", text: current + " ▌" },
+      ]);
+
+      if (i >= text.length) {
+        clearInterval(interval);
+        setChat([...baseChat, { type: "bot", text }]);
+      }
+    }, 8);
+  };
+
+  // 🎥 Process Video
   const handleSubmit = async () => {
     if (!url) return;
 
@@ -40,83 +70,75 @@ export default function App() {
       const data = await res.json();
 
       setSummary(data.summary);
-
       setChat([
-        { type: "bot", text: "Summary ready. Ask me anything about the video." },
+        {
+          type: "bot",
+          text: "Summary ready. Ask me anything about the video.",
+        },
       ]);
-    } catch (err) {
-      console.error(err);
-      setSummary("Error generating summary.");
+    } catch {
+      setSummary("Something went wrong.");
     }
 
     setLoading(false);
   };
 
-  // 🔹 Chat
+  // 💬 Chat
   const askQuestion = async () => {
     if (!question || !videoId) return;
 
     const newChat = [...chat, { type: "user", text: question }];
-    setChat(newChat);
+    setChat([...newChat, { type: "bot", text: "" }]);
     setQuestion("");
 
     try {
       const res = await fetch("http://localhost:5000/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ videoId, question }),
       });
 
       const data = await res.json();
-
-      setChat([
-        ...newChat,
-        { type: "bot", text: data.answer || "No response" },
-      ]);
-    } catch (err) {
-      console.error(err);
+      streamText(data.answer, newChat);
+    } catch {
+      console.error("Chat error");
     }
   };
 
-  // 🔹 Translate
+  // 🌐 Translate
   const translateSummary = async () => {
     try {
       const res = await fetch(
         "http://localhost:5000/translate-summary",
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ videoId }),
         }
       );
 
       const data = await res.json();
-
       setTranslated(data.translated);
       setShowOriginal(true);
-    } catch (err) {
-      console.error(err);
+    } catch {
+      console.error("Translate error");
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#0f172a] text-white flex flex-col items-center p-6">
+    <div className="min-h-screen bg-gradient-to-br from-[#0f172a] via-[#020617] to-black text-white flex flex-col items-center px-4 py-8">
 
-      {/* 🔹 Header */}
-      <h1 className="text-3xl font-bold text-sky-400 mb-6">
+      {/* Header */}
+      <h1 className="text-4xl font-bold bg-gradient-to-r from-sky-400 to-blue-500 bg-clip-text text-transparent mb-10">
         CruxTube
       </h1>
 
-      {/* 🔹 Main Container */}
-      <div className="w-full max-w-2xl flex flex-col space-y-4">
+      {/* Glass Container */}
+      <div className="w-full max-w-2xl bg-white/5 backdrop-blur-lg border border-white/10 rounded-2xl shadow-xl p-5 space-y-5">
 
         {/* Bot Intro */}
-        <div className="bg-gray-200 text-black px-4 py-3 rounded-xl w-fit">
-          Hey! Send me the URL...
+        <div className="bg-white/10 px-4 py-3 rounded-xl w-fit text-gray-200">
+          Hey! Send me a YouTube URL 👇
         </div>
 
         {/* Input */}
@@ -126,33 +148,29 @@ export default function App() {
             placeholder="Paste YouTube URL..."
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            className="flex-1 px-4 py-2 rounded-lg text-black"
+            className="flex-1 px-4 py-2 rounded-lg bg-white/10 border border-white/10 focus:outline-none focus:ring-2 focus:ring-sky-500"
             onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
           />
           <button
             onClick={handleSubmit}
-            className="bg-sky-500 px-4 py-2 rounded-lg hover:bg-sky-600"
+            className="bg-sky-500 px-5 py-2 rounded-lg hover:bg-sky-600 transition"
           >
             Send
           </button>
         </div>
 
         {/* Loading */}
-        {loading && (
-          <div className="text-gray-400 animate-pulse">
-            Generating summary...
-          </div>
-        )}
+        {loading && <Skeleton />}
 
         {/* Summary */}
         {summary && (
-          <div className="bg-gray-200 text-black px-4 py-3 rounded-xl">
-            <p>{showOriginal ? translated : summary}</p>
+          <div className="bg-white/10 p-4 rounded-xl text-gray-200 leading-relaxed">
+            {showOriginal ? translated : summary}
 
             {!showOriginal && (
               <button
                 onClick={translateSummary}
-                className="mt-2 text-sm text-blue-600 underline"
+                className="block mt-3 text-sm text-sky-400 hover:underline"
               >
                 Convert to original language
               </button>
@@ -160,16 +178,16 @@ export default function App() {
           </div>
         )}
 
-        {/* Chat Box */}
+        {/* Chat */}
         {chat.length > 0 && (
-          <div className="flex flex-col space-y-3 max-h-[350px] overflow-y-auto border border-gray-700 p-3 rounded-lg">
+          <div className="max-h-[350px] overflow-y-auto space-y-3 pr-2">
             {chat.map((msg, i) => (
               <div
                 key={i}
-                className={`px-4 py-2 rounded-xl w-fit max-w-[80%] ${
+                className={`max-w-[75%] px-4 py-2 rounded-xl text-sm ${
                   msg.type === "user"
-                    ? "bg-red-500 text-black self-end"
-                    : "bg-gray-200 text-black"
+                    ? "ml-auto bg-sky-500 text-black"
+                    : "bg-white/10 text-gray-200"
                 }`}
               >
                 {msg.text}
@@ -184,15 +202,15 @@ export default function App() {
           <div className="flex gap-2">
             <input
               type="text"
-              placeholder="Ask something..."
+              placeholder="Ask anything..."
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              className="flex-1 px-4 py-2 rounded-lg text-black"
+              className="flex-1 px-4 py-2 rounded-lg bg-white/10 border border-white/10 focus:outline-none focus:ring-2 focus:ring-sky-500"
               onKeyDown={(e) => e.key === "Enter" && askQuestion()}
             />
             <button
               onClick={askQuestion}
-              className="bg-sky-500 px-4 py-2 rounded-lg hover:bg-sky-600"
+              className="bg-sky-500 px-4 py-2 rounded-lg hover:bg-sky-600 transition"
             >
               Send
             </button>
