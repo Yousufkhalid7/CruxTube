@@ -4,28 +4,28 @@ CruxTube AI is a full-stack application that transforms YouTube videos and playl
 
 ---
 
-## 🚀 Features
+##  Features
 
-### 📌 Core Functionality
+###  Core Functionality
 
-* 🔗 Paste any YouTube video or playlist URL
-* 🧠 Automatically extract transcript (with fallback to Whisper if needed)
-* ✍️ Generate concise summaries (default: English)
-* 🌐 Optional translation to original video language
-* 💬 Chat with the video/playlist using contextual AI
-
----
-
-### ⚡ Performance Optimizations
-
-* 🧠 Smart chunking + parallel summarization
-* 💾 In-memory + disk caching (instant reloads)
-* ⏱ Reduced API calls (optimized pipeline)
-* 🧩 Context-aware chunk retrieval for chat (faster + cheaper)
+*  Paste any YouTube video or playlist URL
+*  Automatically extract transcript (with fallback to Whisper if needed)
+*  Generate concise summaries (default: English)
+*  Optional translation to original video language
+*  Chat with the video/playlist using contextual AI
 
 ---
 
-### 🌍 Multilingual Intelligence
+###  Performance Optimizations
+
+*  Smart chunking + parallel summarization
+*  In-memory + disk caching (instant reloads)
+*  Reduced API calls (optimized pipeline)
+*  Context-aware chunk retrieval for chat (faster + cheaper)
+
+---
+
+###  Multilingual Intelligence
 
 * Summary always generated in English (default)
 * One-click translation to original language
@@ -33,29 +33,29 @@ CruxTube AI is a full-stack application that transforms YouTube videos and playl
 
 ---
 
-## 🏗️ Tech Stack
+##  Tech Stack
 
 ### Frontend
 
-* ⚛️ React (Vite)
-* 🎨 Tailwind CSS
-* 🌐 Fetch API
+*  React (Vite)
+*  Tailwind CSS
+*  Fetch API
 
 ### Backend
 
-* 🟢 Node.js + Express
-* 🎥 yt-dlp (video + subtitle extraction)
-* 🎙️ Whisper (fallback transcription)
-* 🤖 Groq API (LLM)
+*  Node.js + Express
+*  yt-dlp (video + subtitle extraction)
+*  Whisper (fallback transcription)
+*  Groq API (LLM)
 
 ### Utilities
 
-* 📁 File System (disk caching)
-* ⚙️ Husky (optional: pre-commit checks)
+*  File System (disk caching)
+*  Husky (optional: pre-commit checks)
 
 ---
 
-## 📂 Project Structure
+##  Project Structure
 
 ```text
 CruxTube/
@@ -78,9 +78,9 @@ CruxTube/
 
 ---
 
-## ⚙️ Setup Instructions
+##  Setup Instructions
 
-### 1️⃣ Clone Repository
+### 1️ Clone Repository
 
 ```bash
 git clone https://github.com/your-username/cruxtube.git
@@ -110,7 +110,7 @@ node index.js
 
 ---
 
-### 3️⃣ Frontend Setup
+###  Frontend Setup
 
 ```bash
 cd client
@@ -126,7 +126,7 @@ http://localhost:5173
 
 ---
 
-## 🧠 How It Works
+##  How It Works
 
 ```text
 User Input
@@ -146,37 +146,37 @@ User can Chat → context-aware answers
 
 ---
 
-## ⚡ Performance Design
+##  Performance Design
 
-* 🚫 Avoid unnecessary LLM calls (no LLM-based language detection)
-* 📉 Reduced token usage via chunk trimming
-* ⚡ Disk caching avoids recomputation
-* 🔍 Relevant chunk selection for chat (not full transcript)
-
----
-
-## 🧪 Future Improvements
-
-* 🔄 Multi-LLM fallback system (Groq → OpenAI → Gemini)
-* 🎥 Video preview integration
-* 🧠 Embeddings-based retrieval (semantic search)
+*  Avoid unnecessary LLM calls (no LLM-based language detection)
+*  Reduced token usage via chunk trimming
+*  Disk caching avoids recomputation
+*  Relevant chunk selection for chat (not full transcript)
 
 ---
 
-## 📌 Notes
+##  Future Improvements
+
+*  Multi-LLM fallback system (Groq → OpenAI → Gemini)
+*  Video preview integration
+*  Embeddings-based retrieval (semantic search)
+
+---
+
+##  Notes
 
 * Subsequent requests are instant due to caching
 * Whisper is only used when subtitles are unavailable
 
 ---
 
-## 🧑‍💻 Author
+##  Author
 
 **Yousuf Khalid**
 
 ---
 
-## ⭐ If you like this project
+##  If you like this project
 
 Give it a ⭐ on GitHub and feel free to contribute!
 
