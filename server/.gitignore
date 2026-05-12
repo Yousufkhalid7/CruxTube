@@ -1,2 +1,6 @@
 .env
 node_modules
+audio_*.mp3
+sub_*.json
+sub_*.vtt
+cache/
