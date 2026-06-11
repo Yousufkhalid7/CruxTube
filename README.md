@@ -4,6 +4,17 @@ CruxTube AI is a full-stack application that transforms YouTube videos and playl
 
 ---
 
+##  Demo ( Interface )
+
+###  How it works?
+
+<img width="248" height="261" alt="image" src="https://github.com/user-attachments/assets/f6a71d69-d863-4832-8f2d-9f258a488167" />
+<img width="248" height="261" alt="image" src="https://github.com/user-attachments/assets/20abe5b9-c8f9-4af3-84bd-f4354638cbbf" />
+<img width="248" height="261" alt="image" src="https://github.com/user-attachments/assets/608fe469-19e3-4dcb-adc0-a0a22095cb92" />
+
+
+---
+
 ##  Features
 
 ###  Core Functionality
